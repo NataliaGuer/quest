@@ -16,7 +16,7 @@ static const char *const PLAYER_CLASS_STR[] = {
 
 //--------------MAP RELATED CONST--------------
 
-static const int NUM_MAP_ZONES = 15;
+static const int NUM_MAP_ZONES = 2;
 static const char *const ZONES_STR[] = {
   [corridio] = "corridoio", 
   [scala] = "scala",
@@ -94,19 +94,20 @@ static void generateMap();
  * asks the game master the info required to create a new zone for the maps
  * and handle its creation
 */
-static void handleInsertZoneMenuChoice(Zona_segrete *, int *);
+static void handleInsertZoneMenuChoice(int *);
 /**
  * inserts a zone in the map at the given position
  */
-static void insertZone(Zona_segrete *, int);
+static void insertZone(int);
+static void handleDeleteZoneMenuChoice(int *playing);
 /**
  * removes the zone in the map at the given position
  */
-static void deleteZone(Zona_segrete *, int);
+static void deleteZone(int);
 /**
  * removes all the zones in the map
  */
-static void freeMap(Zona_segrete *);
+static void freeMap();
 static void printMap();
 static void printZone(Zona_segrete *);
 /**
@@ -116,7 +117,7 @@ static void closeMap();
 
 //--------------GENERAL PURPOSE FUNCTIONS DECLARATION--------------
 
-static int printMenu(int , int , char *, int *);
+static int printMenu(int , int , char *);
 static void endGame(int *);
 static void cleanStdin();
 
@@ -129,22 +130,28 @@ void imposta_gioco(int *playing) {
   // check if the memory allocation was successful
   if (players == NULL) {
     printf("Errore durante l'impostazione del gioco, riprova.\n");
-    endGame(playing);
-    return;
+    return endGame(playing);
   }
 
-  printf("Inizio impostazione del gioco, ogni volta che ti verrà mostrato un menu potrai scegliere di interrompere la procedura e tornare al menu principale "
-         "selezionando 0.\n\n");
+  printf("\nInizio impostazione del gioco,\nogni volta che ti verrà mostrato un menu potrai scegliere di interrompere la procedura e tornare al menu principale selezionando 0.\n\n");
 
-  int playersNum = printMenu(1, 4, "Inserisci il numero di giocatori, da 1 a 4\n", playing);
-  if (playing == 0) {
-    return;
+  int playersNum = printMenu(1, 4, "Inserisci il numero di giocatori, da 1 a 4\n");
+  if (playersNum == 0) {
+    return endGame(playing);
   }
 
-  for (int i = 0; i < playersNum; i++) {
+  int i = 0;
+  while (i < playersNum && *playing == 1)
+  {
     Giocatore *player = malloc(sizeof(Giocatore));
     players[i] = player;
     setupPlayer(player, playing);
+    i++;
+  }
+  
+  //if there was an error during the initialization of the player we exit the game
+  if (*playing == 0) {
+    return endGame(playing);
   }
 
   setupMap(playing);
@@ -168,24 +175,15 @@ static void setupPlayer(Giocatore *player, int *playing) {
 
   void (*setupF[4])(Giocatore *) = {&setupBarbaro, &setupNano, &setupElfo, &setupMago};
 
-  int classChoise = -1;
-  do {
-    printf("Scegli la tua classe:\n1) barbaro\n2) nano\n3) elfo\n4) mago\n");
-    if (scanf("%d", &classChoise) != 1 || !(classChoise >= 1 && classChoise <= 4)) {
-      cleanStdin();
-      classChoise = -1;
-    }
-
-    if (classChoise == 0) {
-      return endGame(playing);
-    }
-
-  } while (classChoise == -1);
-
+  int classChoice = printMenu(1, 4, "Scegli la tua classe:\n1) barbaro\n2) nano\n3) elfo\n4) mago\n");
+  if(classChoice == 0) {
+    *playing = 0;
+    return;
+  }
   // if we are here the current player selected a valid option
 
-  classChoise--; // we work in the range [0,3]
-  (*setupF[classChoise])(player);
+  classChoice--; // we work in the range [0,3]
+  (*setupF[classChoice])(player);
 
   printPlayer(player);
 
@@ -271,8 +269,7 @@ static void setupMap(int *playing) {
   printf("pFirst: %p\t pLast: %p\n", pFirst, pLast);
   printf("\n*** Generazione della mappa ***\n");
   // the menu options are: generate map, insert zone, delete zone, print map, close map
-  while (mapSetupComplete == 0)
-  {
+  while (mapSetupComplete == 0 && *playing == 1) {
     char *menuPrompt = "\nMenu generazione mappa:\n"
       "1) genera mappa: genera le prime 15 zone della mappa\n"
       "2) inserisci zona: aggiunge una nuova zona nella posizione indicata\n"
@@ -280,21 +277,30 @@ static void setupMap(int *playing) {
       "4) stampa mappa\n"
       "5) chiudi mappa\n";
 
-    int choice = printMenu(1, 5, menuPrompt, playing);
-    if (playing == 0){
-      return;
-    }
+    int choice = printMenu(1, 5, menuPrompt);
 
-    switch (choice)
-    {
-    case 1:
-      generateMap(pFirst, pLast);
-      break;
-    case 2:
-      handleInsertZoneMenuChoice(pFirst, playing);
-      break;
-    default:
-      break;
+    switch (choice) {
+      case 0:
+        *playing = 0;
+        break;
+      case 1:
+        generateMap();
+        break;
+      case 2:
+        printf("pFirst: %p\n", pFirst);
+        handleInsertZoneMenuChoice(playing);
+        break;
+      case 3:
+        handleDeleteZoneMenuChoice(playing);
+        break;
+      case 4:
+        printMap();
+        break;
+      case 5:
+        closeMap();
+        break;
+      default:
+        break;
     }
   }
 }
@@ -303,6 +309,8 @@ static void initZone(Zona_segrete *zone) {
   zone->zona = rand() % 10;
   zone->porta = rand() % 3;
   zone->tesoro = rand() % 4;
+  zone->zona_precedente = NULL;
+  zone->zona_succesiva = NULL;
 }
 
 static void generateMap() {
@@ -334,47 +342,89 @@ static void generateMap() {
   printMap();
 }
 
-static void handleInsertZoneMenuChoice(Zona_segrete *firstZone, int *playing) {
-  char *menuPrompt;
-  sprintf(menuPrompt, "Inserisci la posizione in cui aggiungere la nuova zona, da %d a %d\n", 1, mapSize+1);
+static void handleInsertZoneMenuChoice(int *playing) {
+  char menuPrompt[90];
+  sprintf(menuPrompt, "\nInserisci la posizione in cui aggiungere la nuova zona, da %d a %d\n", 1, mapSize+1);
   
-  int position = printMenu(1, mapSize+1, menuPrompt, playing);
-  if (playing == 0) {
+  int position = printMenu(1, mapSize+1, menuPrompt);
+
+  if (position == 0) {
+    *playing = 0;
     return;
   }
   
-  insertZone(firstZone, position);
+  insertZone(position);
+  printMap();
 }
 
-static void insertZone(Zona_segrete *firstZone, int position) {
-  Zona_segrete *currentZone = firstZone;
+static void insertZone(int position) {
+  
+  Zona_segrete *newZone = malloc(sizeof(Zona_segrete));
+  initZone(newZone);
 
+  if (pFirst == NULL && pFirst == pLast) {
+    //the map is empty
+    pFirst = pLast = newZone;
+    mapSize++;
+    return;
+  }
+
+  //position is 1-based
+  position --;
+  Zona_segrete *prevZone = NULL;
+  Zona_segrete *nextZone = pFirst;
   int i = 0;
-  while (i < position && currentZone != NULL) {
-    currentZone = currentZone->zona_succesiva;
+  // we want to point to the zone that will be the next for the new zone
+  while (i < position && nextZone != NULL) {
+    prevZone = nextZone;
+    nextZone = nextZone->zona_succesiva;
     i++;
   }
 
-  if (currentZone == NULL) {
-    printf("Errore durante l'inserimento della zona.\n");
-    return;
+  newZone->zona_precedente = prevZone;
+  newZone->zona_succesiva = nextZone;
+  if (prevZone != NULL) {
+    prevZone->zona_succesiva = newZone;
+  } else {
+    // if the new zone hasn't a prevzone it's the new first zone
+    pFirst = newZone;
   }
-
-  Zona_segrete *newZone = malloc(sizeof(Zona_segrete));
-  initZone(newZone);
-  //TODO gestire il caso inserimento della prima e dell'ultima zona
-  newZone->zona_precedente = currentZone;
-  newZone->zona_succesiva = currentZone->zona_succesiva;
-  newZone->zona_succesiva->zona_precedente = newZone;
-  currentZone->zona_succesiva = newZone;
+  if (nextZone != NULL) {
+    nextZone->zona_precedente = newZone;
+  } else {
+    pLast = newZone;
+  }
 
   mapSize++;
 }
 
-static void handleDeleteZoneMenuChoice(Zona_segrete *firstZone, int *playing) {}
+static void handleDeleteZoneMenuChoice(int *playing) {
+  if (mapSize == 0) {
+    printf("La mappa è vuota!\n");
+    return;
+  }
 
-static void deleteZone(Zona_segrete *firstZone, int position) {
-  Zona_segrete *currentZone = firstZone;
+  char menuPrompt[80];
+  sprintf(menuPrompt, "\nInserisci la posizione della zona da eliminare, da %d a %d\n", 1, mapSize);
+  
+  int position = printMenu(1, mapSize+1, menuPrompt);
+
+  if (position == 0) {
+    *playing = 0;
+    return;
+  }
+
+  deleteZone(position);
+  printMap();
+}
+
+static void deleteZone(int position) {
+  if (pFirst == NULL && pFirst == pLast) {
+    return;
+  }
+
+  position--;
+  Zona_segrete *currentZone = pFirst;
 
   int i = 0;
   while (i < position && currentZone != NULL) {
@@ -387,27 +437,34 @@ static void deleteZone(Zona_segrete *firstZone, int position) {
     return;
   }
 
+  if (currentZone->zona_precedente == NULL && currentZone->zona_succesiva == NULL) {
+    //we are deleting the only zone in the map
+    pFirst = pLast = NULL;
+    free(currentZone);
+    mapSize--;
+    return;
+  }
+
   if (currentZone->zona_precedente != NULL) {
     currentZone->zona_precedente->zona_succesiva = currentZone->zona_succesiva;
   } else {
     // the zone to delete is the first
-    firstZone = currentZone->zona_succesiva;
-    firstZone->zona_precedente = NULL;
+    pFirst = currentZone->zona_succesiva;
   }
 
   if (currentZone->zona_succesiva != NULL) {
     currentZone->zona_succesiva->zona_precedente = currentZone->zona_precedente;
   } else {
     // the zone to delete is the last
-    currentZone->zona_precedente->zona_succesiva = NULL;
+    pLast = currentZone->zona_precedente;
   }
   free(currentZone);
 
   mapSize--;
 }
 
-static void freeMap(Zona_segrete *lastZone) {
-  Zona_segrete *current = lastZone;
+static void freeMap() {
+  Zona_segrete *current = pLast;
   while (current != NULL)
   {
     Zona_segrete *prev = current->zona_precedente;
@@ -420,6 +477,11 @@ static void freeMap(Zona_segrete *lastZone) {
 }
 
 static void printMap(){
+  if (mapSize == 0) {
+    printf("La mappa è vuota.\n\n");
+    return;
+  }
+
   int i = 1;
   printf("***Mappa***\n");
   Zona_segrete *zone = pFirst;
@@ -459,8 +521,7 @@ static void closeMap() {
 
 //--------------GENERAL PURPOSE FUNCTIONS--------------
 
-static int printMenu(int optionsFrom, int optionsTo, char *menuPrompt, int *playing){
-    
+static int printMenu(int optionsFrom, int optionsTo, char *menuPrompt){
     int choice = -1;
     do
     {
@@ -469,16 +530,12 @@ static int printMenu(int optionsFrom, int optionsTo, char *menuPrompt, int *play
         cleanStdin();
         choice = -1;
       }
-
-      if (choice < optionsFrom || choice > optionsTo){
+      
+      if (choice != 0 && choice < optionsFrom || choice > optionsTo){
         printf("Seleziona una delle opzioni disponibili, 0 per tornare al menu principale.\n");
         choice = -1;
       }
     } while (choice == -1);
-
-    if(choice == 0){
-      endGame(playing);
-    }
 
     return choice;
 }
