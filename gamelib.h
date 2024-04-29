@@ -24,9 +24,12 @@ enum Tipo_tesoro { nessun_tesoro, veleno, guarigione, doppia_guarigione };
 enum Tipo_porta { nessuna_porta, porta_normale, porta_da_scassinare };
 
 struct Zona_segrete {
+  int ordinal;
   enum Tipo_zona zona;
   enum Tipo_tesoro tesoro;
+  unsigned char contiene_tesoro;
   enum Tipo_porta porta;
+  unsigned char porta_aperta;
   struct Zona_segrete *zona_succesiva;
   struct Zona_segrete *zona_precedente;
 };

@@ -13,10 +13,9 @@ int main(int argc, char const *argv[]) {
   int playing = 1;
   do {
     // prints menu
-    // TODO insert logo or welcome message
     int menuChoice;
     int temp;
-    printf("menu:\n1) Imposta gioco\n2) Gioca\n3) Termina Gioco\n");
+    printf("\n*** Menu principale ***:\n1) Imposta gioco\n2) Gioca\n3) Termina Gioco\n");
     if (scanf("%d", &menuChoice) != 1) {
       // buffer cleaning
       while (getchar() != '\n') {
