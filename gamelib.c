@@ -73,27 +73,11 @@ static Giocatore *winner = NULL;
 
 //--------------PLAYER FUNCTIONS DECLARATION--------------
 
-static void setupPlayers();
-/**
- * the function is responsible for the managment of the steps
- * required to create a new player
- */
-static void setupPlayer(Giocatore *, int *);
-/**
- * the function contains the setup values to create a barbarian class player
- */
+static int setupPlayers();
+static int setupPlayer(Giocatore *);
 static void setupBarbaro(Giocatore *);
-/**
- * the function contains the setup values to create a dwarf class player
- */
 static void setupNano(Giocatore *);
-/**
- * the function contains the setup values to create a elf class player
- */
 static void setupElfo(Giocatore *);
-/**
- * the function contains the setup values to create a wizard class player
- */
 static void setupMago(Giocatore *);
 static void printPlayer(Giocatore *);
 static void freePlayer(Giocatore *);
@@ -101,41 +85,16 @@ static void freePlayers();
 
 //--------------MAP FUNCTIONS DECLARATION--------------
 
-/**
- * the function manage the interaction with the game master for the creation of the game map
- */
-static void setupMap(int *);
-/**
- * the function contains the logic to generate a map zone
- */
+static int setupMap();
 static void initZone(Zona_segrete *);
-/**
- * the function is part of the user menu during the map generation process,
- */
 static void generateMap();
-/**
- * asks the game master the info required to create a new zone for the maps
- * and handle its creation
-*/
-static void handleInsertZoneMenuChoice(int *);
-/**
- * inserts a zone in the map at the given position
- */
+static int handleInsertZoneMenuChoice();
 static void insertZone(int);
-static void handleDeleteZoneMenuChoice(int *);
-/**
- * removes the zone in the map at the given position
- */
+static int handleDeleteZoneMenuChoice();
 static void deleteZone(int);
-/**
- * removes all the zones in the map
- */
 static void freeMap();
 static void printMap();
 static void printZone(Zona_segrete *, int);
-/**
- * checks the validity of the generated map and saves its state
- */
 static void closeMap();
 
 //--------------GAME FUNCTIONS DECLARATION--------------
@@ -147,6 +106,7 @@ static void moveToNextZone(Giocatore *, Turno *);
 static void turnBack(Giocatore *, Turno *);
 static Avversario* generateOpponent(Zona_segrete *);
 static void useSpecialPower(Giocatore *, Avversario *);
+static void printOpponent(Avversario *);
 static int figthOpponent(Giocatore *, Avversario *);
 static void playerAttacksOpponent(Giocatore *, Avversario *);
 static void opponentAttacksPlayer(Avversario *, Giocatore *, int);
@@ -171,27 +131,26 @@ static void cleanStdin();
 
 void imposta_gioco(int *playing) {
 
-  if (players == NULL) {
-    setupPlayers(playing);
-  } else {
-    printf("I giocatori sono già stati inizializzati.\n");
-  }
-  
-  //if there was an error during the initialization of the player we exit the game
-  if (*playing == 0) {
-    return endGame(playing);
+  if (players != NULL) {
+    freePlayers();
   }
 
-  if (pFirst == NULL) {
-    setupMap(playing);
-  } else {
-    printf("La mappa è già stata inizializzata.\n");
+  int setupRes = setupPlayers();
+  if (!setupRes) {
+    return;
   }
+
+  if (pFirst != NULL) {
+    freeMap();
+  }
+
+  setupMap();
 }
 
 void gioca(int *playing) {
+  gameStatus = 1;
 
-  if (mapSetupComplete == 0) {
+  if (mapSetupComplete == 0 || players == NULL) {
     printf("Prima di poter iniziare a giocare devi impostare il gioco\n");
     return;
   }
@@ -213,7 +172,7 @@ void gioca(int *playing) {
 
       unsigned char ordinal = order[i];
       
-      if (players[ordinal] != NULL) {
+      if (players[ordinal] != NULL && players[ordinal]->p_vita > 0) {
       
         initTurn(turn, players[ordinal]);
         printf("\nÈ il turno di %s\n", players[ordinal]->nome);
@@ -265,50 +224,60 @@ void gioca(int *playing) {
     printf("Il gioco termina senza un vincitore.\n");
   }
 
-  free(turn); 
+  free(turn);
+  cleanAll();
 }
 
 void termina_gioco(int *playing) {
-  printf("\nGrazie per aver giocato\n");
+  printf("\nGrazie per aver giocato.\n");
   endGame(playing);
 }
 
 //--------------PLAYER FUNCTIONS--------------
 
-static void setupPlayers(int *playing) {
-  players = malloc(sizeof(Giocatore *) * NUM_PLAYERS);
-  // check if the memory allocation was successful
-  if (players == NULL) {
-    printf("Errore durante l'impostazione del gioco, riprova.\n");
-    return endGame(playing);
-  }
+static int setupPlayers() {
 
   printf("\n*** Impostazione del gioco ***\nogni volta che ti verrà mostrato un menu potrai scegliere di interrompere la procedura e tornare al menu principale selezionando 0.\n\n");
 
   int playersNum = printMenu(1, 4, "Inserisci il numero di giocatori, da 1 a 4\n");
-  if (playersNum == 0) {
-    return endGame(playing);
+  if (!playersNum) {
+    return 0;
+  }
+
+  players = malloc(sizeof(Giocatore *) * NUM_PLAYERS);
+  // check if the memory allocation was successful
+  if (players == NULL) {
+    printf("Errore durante l'impostazione del gioco, riprova.\n");
+    return 0;
   }
 
   int i = 0;
-  while (i < playersNum && *playing == 1)
+  int setup = 1;
+  while (i < playersNum && setup)
   {
     Giocatore *player = malloc(sizeof(Giocatore));
     players[i] = player;
-    setupPlayer(player, playing);
+    setup = setupPlayer(player);
     i++;
+  }
+
+  if (!setup) {
+    freePlayers();
+    return 0;
   }
 
   for (int i = playersNum; i < NUM_PLAYERS; i++)
   {
     players[i] = NULL;
   }
+
+  return 1;
 }
 
-static void setupPlayer(Giocatore *player, int *playing) {
-  char name[20];
+static int setupPlayer(Giocatore *player) {
+  char name[21];
   printf("\n*** Inizializzione nuovo giocatore ***\nInserisci il tuo nome (max 20 caratteri)\n");
-  scanf("%s", name);
+  scanf("%20s", name);
   strcpy(player->nome, name);
 
   // class choise
@@ -316,10 +285,10 @@ static void setupPlayer(Giocatore *player, int *playing) {
   void (*setupF[4])(Giocatore *) = {&setupBarbaro, &setupNano, &setupElfo, &setupMago};
 
   int classChoice = printMenu(1, 4, "\nScegli la tua classe:\n1) barbaro\n2) nano\n3) elfo\n4) mago\n");
-  if (classChoice == 0) {
-    *playing = 0;
-    return;
+  if (!classChoice) {
+    return 0;
   }
+  
   // if we are here the current player selected a valid option
 
   classChoice--; // we work in the range [0,3]
@@ -329,8 +298,8 @@ static void setupPlayer(Giocatore *player, int *playing) {
 
   cleanStdin();
   char switchChoice;
-  printf("Vuoi sacrificare un punto mente per un punto vita? (s=sì,n=no)\n");
-  scanf("%c", &switchChoice);
+  printf("Vuoi sacrificare un punto mente per un punto vita? (s=sì)\n");
+  scanf("%1c", &switchChoice);
   if (switchChoice == 's') {
     player->mente--;
     player->p_vita++;
@@ -339,13 +308,15 @@ static void setupPlayer(Giocatore *player, int *playing) {
 
   cleanStdin();
   switchChoice = '-';
-  printf("Vuoi sacrificare un punto vita per un punto mente? (s=sì,n=no)\n");
+  printf("Vuoi sacrificare un punto vita per un punto mente? (s=sì)\n");
   scanf("%c", &switchChoice);
   if (switchChoice == 's') {
     player->p_vita--;
     player->mente++;
     printPlayer(player);
   }
+
+  return 1;
 }
 
 static void setupBarbaro(Giocatore *player) {
@@ -395,7 +366,7 @@ static void printPlayer(Giocatore *player) {
          "Dadi difesa: %d\n"
          "Punti vita: %d\n"
          "Mente: %d\n"
-         "Potere speciale:%d\n\n",
+         "Potere speciale: %d\n\n",
          player->nome, PLAYER_CLASS_STR[player->classe], player->dadi_attacco, player->dadi_difesa, player->p_vita, player->mente, player->potere_speciale);
 }
 
@@ -432,39 +403,42 @@ static void freePlayers() {
   }
   
   for (int i = 0; i < NUM_PLAYERS; i++) {
-    free(players[i]);
+    if (players[i]) {
+      free(players[i]);
+    }
   }
   free(players);
+  players = NULL;
 }
 
 //--------------MAP FUNCTIONS--------------
 
-static void setupMap(int *playing) {
+static int setupMap() {
 
   printf("\n*** Generazione della mappa ***\n");
   // the menu options are: generate map, insert zone, delete zone, print map, close map
-  while (mapSetupComplete == 0 && *playing == 1) {
+  int setup = 1;
+  while (mapSetupComplete == 0 && setup == 1) {
     char *menuPrompt = "\nMenu generazione mappa:\n"
-      "1) genera mappa: genera le prime 15 zone della mappa\n"
+      "1) genera mappa: genera una nuova mappa con 15 zone\n"
       "2) inserisci zona: aggiunge una nuova zona nella posizione indicata\n"
       "3) cancella zona: cancella la zona nella posizione indicata\n"
       "4) stampa mappa\n"
-      "5) chiudi mappa\n";
+      "5) chiudi mappa: salva la mappa generata\n";
 
     int choice = printMenu(1, 5, menuPrompt);
-
     switch (choice) {
       case 0:
-        *playing = 0;
+        setup = 0;
         break;
       case 1:
         generateMap();
         break;
       case 2:
-        handleInsertZoneMenuChoice(playing);
+        setup = handleInsertZoneMenuChoice();
         break;
       case 3:
-        handleDeleteZoneMenuChoice(playing);
+        setup = handleDeleteZoneMenuChoice();
         break;
       case 4:
         printMap();
@@ -476,6 +450,8 @@ static void setupMap(int *playing) {
         break;
     }
   }
+
+  return setup;
 }
 
 static void initZone(Zona_segrete *zone) {
@@ -518,19 +494,19 @@ static void generateMap() {
   printMap();
 }
 
-static void handleInsertZoneMenuChoice(int *playing) {
+static int handleInsertZoneMenuChoice() {
   char menuPrompt[90];
   sprintf(menuPrompt, "\nInserisci la posizione in cui aggiungere la nuova zona, da %d a %d\n", 1, mapSize+1);
   
   int position = printMenu(1, mapSize+1, menuPrompt);
-
   if (position == 0) {
-    *playing = 0;
-    return;
+    return 0;
   }
   
   insertZone(position);
   printMap();
+
+  return 1;
 }
 
 static void insertZone(int position) {
@@ -574,24 +550,25 @@ static void insertZone(int position) {
   mapSize++;
 }
 
-static void handleDeleteZoneMenuChoice(int *playing) {
+static int handleDeleteZoneMenuChoice() {
   if (mapSize == 0) {
     printf("La mappa è vuota!\n");
-    return;
+    return 0;
   }
 
   char menuPrompt[80];
   sprintf(menuPrompt, "\nInserisci la posizione della zona da eliminare, da %d a %d\n", 1, mapSize);
   
-  int position = printMenu(1, mapSize+1, menuPrompt);
+  int position = printMenu(1, mapSize, menuPrompt);
 
-  if (position == 0) {
-    *playing = 0;
-    return;
+  if (!position) {
+    return 0;
   }
 
   deleteZone(position);
   printMap();
+
+  return 1;
 }
 
 static void deleteZone(int position) {
@@ -640,11 +617,10 @@ static void deleteZone(int position) {
 }
 
 static void freeMap() {
-  if (pFirst == NULL && pLast == NULL)
-  {
+  if (pFirst == NULL && pLast == NULL) {
     return;
   }
-  
+
   Zona_segrete *current = pLast;
   while (current != NULL)
   {
@@ -654,6 +630,7 @@ static void freeMap() {
   }
   
   mapSize = 0;
+  mapSetupComplete = 0;
   pFirst = pLast = NULL;
 }
 
@@ -689,7 +666,15 @@ static void printZone(Zona_segrete *zone, int full) {
       zone->ordinal, ZONES_STR[zone->zona], TREASURES_STR[zone->tesoro], DOORS_STR[zone->porta]
     );
   } else {
-    printf("  tipo zona: %s\n", ZONES_STR[zone->zona]);
+    char *porta = zone->porta == nessuna_porta ? "nessuna porta" : "zona con porta";
+    char *tesoro = zone->tesoro == nessun_tesoro ? "nessun tesoro" : "zona con tesoro";
+    printf(
+      "  zona numero: %d\n"
+      "  tipo zona: %s\n"
+      "  %s\n"
+      "  %s\n",
+      zone->ordinal, ZONES_STR[zone->zona], porta, tesoro
+    );
   }
   printf("~~~~~~~~~~~~~~~~~~~~~~~~~~~\n");
 }
@@ -743,18 +728,25 @@ static int interactWithDoor(Zona_segrete *zone, Giocatore *player, Turno *turn) 
     return 1;
   }
 
-  diceRoll = rand() % 9;
+  diceRoll = rand() % 10;
   printf("Non sei riuscito ad aprire la porta\n");
   if (diceRoll <= 4) {
     printf("Perdi un punto vita\n");
     player->p_vita--;
+
+    if (player->p_vita == 0) {
+      printf("Sei morto!\n");
+      freePlayer(player);
+    }
+
     return 0;
   }
 
   if (diceRoll <= 8) {
     //apparizione abitante delle segrete
-    printf("\nAppare un abitante delle segrete.\n");
     Avversario *opponent = generateOpponent(player->posizione);
+    printf("\nAppare un abitante delle segrete\n");
+    printOpponent(opponent);
     handleFight(player, opponent, player->posizione, turn);
     return 0;
   }
@@ -772,7 +764,7 @@ static void moveToNextZone(Giocatore *player, Turno *turn) {
   }
 
   if (player->posizione->zona_succesiva->porta != nessuna_porta && player->posizione->zona_succesiva->porta_aperta == 0) {
-    printf("Devi prima aprire la porta della zona!\n");
+    printf("\nDevi prima aprire la porta della zona!\n");
     return;
   }
 
@@ -782,13 +774,13 @@ static void moveToNextZone(Giocatore *player, Turno *turn) {
   if (player->posizione->zona_succesiva == NULL) {
     printf("\nSei arrivato nella zona finale!\n");
   } else {
-    diceRoll = rand() % 2;
+    diceRoll = rand() % 3;
   }
 
   if (diceRoll == 0) {
     printf("\nAppare un abitante delle segrete\n");
     Avversario *opponent = generateOpponent(player->posizione);
-
+    printOpponent(opponent);
     handleFight(player, opponent, player->posizione, turn);
   }
 }
@@ -811,46 +803,48 @@ static void turnBack(Giocatore *player, Turno *turn) {
 }
 
 static void handleFight(Giocatore *player, Avversario *opponent, Zona_segrete *zone, Turno *turn) {
-  int fightChoice = printFightMenu(player);
+  int fightChoice = 0;
 
-  switch (fightChoice)
-  {
-  case 1:
-    figthOpponent(player, opponent);
-    break;
-  case 2:
-    runAwayFromOpponent(player, opponent, turn);
-    break;
-  case 3:
-    useSpecialPower(player, opponent);
-    break;
-  default:
-    break;
+  while (fightChoice == 0) {
+    fightChoice = printFightMenu(player);
+  }
+
+  switch (fightChoice) {
+    case 1:
+      figthOpponent(player, opponent);
+      break;
+    case 2:
+      runAwayFromOpponent(player, opponent, turn);
+      break;
+    case 3:
+      useSpecialPower(player, opponent);
+      break;
+    default:
+      break;
   }
 }
 
 static Avversario* generateOpponent(Zona_segrete *zone) {
 
   Avversario *opponent = malloc(sizeof(Avversario));
-  switch (zone->tesoro)
-  {
-  case doppia_guarigione:
-    opponent->dadi_attacco = 2;
-    opponent->dadi_difesa = 3;
-    opponent->p_vita = 4;
-    break;
-  case guarigione:
-    opponent->dadi_attacco = 1;
-    opponent->dadi_difesa = 2;
-    opponent->p_vita = 3;
-    break;
-  case nessun_tesoro:
-    opponent->dadi_attacco = 1;
-    opponent->dadi_difesa = 2;
-    opponent->p_vita = 2;
-    break;
-  default:
-    break;
+  switch (zone->tesoro) {
+    case doppia_guarigione:
+      opponent->dadi_attacco = 2;
+      opponent->dadi_difesa = 3;
+      opponent->p_vita = 4;
+      break;
+    case guarigione:
+      opponent->dadi_attacco = 1;
+      opponent->dadi_difesa = 2;
+      opponent->p_vita = 3;
+      break;
+    case nessun_tesoro:
+      opponent->dadi_attacco = 1;
+      opponent->dadi_difesa = 2;
+      opponent->p_vita = 2;
+      break;
+    default:
+      break;
   }
 
   if (zone->zona_succesiva == NULL) {
@@ -868,6 +862,17 @@ static void useSpecialPower(Giocatore *player, Avversario *opponent) {
   player->potere_speciale--;
   printf("\nUccidi l'avversario utilizzando il tuo potere speciale\n");
   freeOpponent(opponent);
+}
+
+static void printOpponent(Avversario *opponent) {
+  printf(
+    ">>> Il tuo avversario <<<\n"
+    ">>> tipo: %s\n"
+    ">>> dadi attacco: %d\n"
+    ">>> dadi difesa: %d\n"
+    ">>> punti vita: %d\n",
+    opponent->nome, opponent->dadi_attacco, opponent->dadi_difesa, opponent->p_vita
+  );
 }
 
 static int figthOpponent(Giocatore *player, Avversario *opponent) {
@@ -900,12 +905,14 @@ static int figthOpponent(Giocatore *player, Avversario *opponent) {
 }
 
 static void playerAttacksOpponent(Giocatore *player, Avversario *opponent) {
-  int i = 0;
+  unsigned char i = 0;
   int playerHits = 0;
   while (i < player->dadi_attacco)
   {
-    int diceRoll = rand() % 6;
-    if (diceRoll <= 2) {
+    int diceRoll = rand() % 2;
+    //the player scores an hit when the dice roll results in a skull
+    //there a 3 skulls on a dice, so the player has 1 possibility over 2 to score an hit 
+    if (diceRoll == 0) {
       playerHits++;
     }
     i++;
@@ -921,7 +928,8 @@ static void playerAttacksOpponent(Giocatore *player, Avversario *opponent) {
 
   int opponentDefenses = 0;
   i = 0;
-  while(i < opponent->dadi_difesa) {
+  while(i < opponent->dadi_difesa && i < playerHits) {
+    //the opponent has 1 possibility over 6 to defend
     int diceRoll = rand() % 6;
     if (diceRoll == 0) {
       opponentDefenses++;
@@ -939,15 +947,20 @@ static void playerAttacksOpponent(Giocatore *player, Avversario *opponent) {
     }
     printf("L'avversario perde %d punti vita\n", opponentDemage);
   }
+
+  if (opponent->p_vita > 0) {
+    //after defending himself, the opponent attacks
+    opponentAttacksPlayer(opponent, player, 0);
+  }
 }
 
 static void opponentAttacksPlayer(Avversario *opponent, Giocatore *player, int duringEscape) {
-  int i = 0;
+  unsigned char i = 0;
   int opponentHits = 0;
   while (i < opponent->dadi_attacco)
   {
-    int diceRoll = rand() % 6;
-    if (diceRoll <= 2) {
+    int diceRoll = rand() % 2;
+    if (diceRoll == 0) {
       opponentHits++;
     }
     i++;
@@ -957,17 +970,19 @@ static void opponentAttacksPlayer(Avversario *opponent, Giocatore *player, int d
   printf("Il mostro lancia tutti i suoi dadi attacco e ottiene %d teschi\n", opponentHits);
 
   if (opponentHits == 0) {
-    printf("Il mostro non ti infligge danni, il combattimento continua.\n");
-    return;
+    printf("Il mostro non ti infligge danni.\n");
+    playerAttacksOpponent(player, opponent);
   }
 
   int playerDefenses = 0;
   i = 0;
   int playerDefenseDice = duringEscape == 0 ? player->dadi_difesa : player->dadi_difesa/2;
-  while (i < playerDefenseDice) 
+  while (i < playerDefenseDice && i < opponentHits)
   {
-    int diceRoll = rand() % 6;
-    if (diceRoll <= 1) {
+    //there are 2 white shields on a defense dice
+    //the player has 1 possibility over 3 to defend
+    int diceRoll = rand() % 3;
+    if (diceRoll == 0) {
       playerDefenses++;
     }
     i++;
@@ -983,20 +998,24 @@ static void opponentAttacksPlayer(Avversario *opponent, Giocatore *player, int d
     }
     printf("Perdi %d punti vita\n", playerDemage);
   }
-  
+
+  if (player->p_vita > 0) {
+    //after defending himself, the player attacks
+    playerAttacksOpponent(player, opponent);
+  }
 }
 
 static void runAwayFromOpponent(Giocatore *player, Avversario *opponent, Turno *turn) {
   
   if (player->posizione->zona_precedente == NULL) {
     printf("\nSei nella prima zona, non puoi scappare!\n");
-    figthOpponent(player, opponent);
+    opponentAttacksPlayer(opponent, player, 1);
     return;
   }
 
   //the player can decide whether fo fight or run away
-  int diceRoll = rand() % 6;
-  printf("\nLanci un D6, ottieni: %d\n", diceRoll);
+  int diceRoll = (rand() % 6) + 1;
+  printf("\nLanci un D6, ottieni: %d\nLa tua caratteristica mente vale: %d\n", diceRoll, player->mente);
   if (diceRoll <= player->mente) {
     printf("Riesci ad indietreggiare\n");
     //in the case that the player ran away from an oppent his position is updated and there is no generation
@@ -1005,6 +1024,7 @@ static void runAwayFromOpponent(Giocatore *player, Avversario *opponent, Turno *
     return;
   }
 
+  printf("Non sei riuscito a indietreggiare, l'avversario ti attacca\n");
   //the opponent attaks and the player defens with half dice
   opponentAttacksPlayer(opponent, player, 1);
 }
@@ -1015,7 +1035,6 @@ static void movePlayerPosition(Giocatore *player, Zona_segrete *to, Turno *turn)
   to->contiene_tesoro = 1;
   turn->remaining_moves--;
   turn->can_advance = 0;
-
 }
 
 static void freeOpponent(Avversario *opponent) {
@@ -1058,9 +1077,9 @@ static void takeDoubleHealing(Giocatore *player) {
 
 static int printFightMenu(Giocatore *player) {
   if (player->potere_speciale == 0) {
-    return printMenu(1, 2, "Menu combattimento:\n1) combatti\n2) scappa\n");
+    return printMenu(1, 2, "\nMenu combattimento:\n1) combatti\n2) scappa\n");
   }
-  return printMenu(1, 3, "Menu combattimento:\n1) combatti\n2) scappa\n3) usa potere speciale\n");
+  return printMenu(1, 3, "\nMenu combattimento:\n1) combatti\n2) scappa\n3) usa potere speciale\n");
 }
 
 static int printZoneMenu(Giocatore *player, Turno *turn) {
@@ -1124,26 +1143,27 @@ static int printZoneMenu(Giocatore *player, Turno *turn) {
 //--------------GENERAL PURPOSE FUNCTIONS--------------
 
 static int printMenu(int optionsFrom, int optionsTo, char *menuPrompt){
-    int choice = -1;
-    do
-    {
-      printf("%s", menuPrompt);
-      if (scanf("%d", &choice) != 1) {
-        cleanStdin();
-        choice = -1;
-      }
-      
-      if (choice != 0 && choice < optionsFrom || choice > optionsTo){
-        printf("Seleziona una delle opzioni disponibili, 0 per tornare al menu principale.\n");
-        choice = -1;
-      }
-    } while (choice == -1);
+  int choice = -1;
+  
+  do
+  {
+    printf("%s", menuPrompt);
+    if (scanf("%d", &choice) != 1) {
+      cleanStdin();
+      choice = -1;
+    }
+    
+    if (choice != 0 && choice < optionsFrom || choice > optionsTo){
+      printf("Seleziona una delle opzioni disponibili, 0 per tornare al menu principale.\n");
+      choice = -1;
+    }
+  } while (choice == -1);
 
-    return choice;
+  return choice;
 }
 
 static void cleanAll() {
-  freeMap(pLast);
+  freeMap();
   freePlayers();
 }
 
