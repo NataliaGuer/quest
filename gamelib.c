@@ -176,7 +176,7 @@ void gioca(int *playing) {
       
         initTurn(turn, players[ordinal]);
         printf("\nÈ il turno di %s\n", players[ordinal]->nome);
-        printf("Ti trovi nella zona %s\n", ZONES_STR[players[ordinal]->posizione->zona]);
+        printf("Ti trovi nella zona %d\n", players[ordinal]->posizione->ordinal);
 
         while (gameStatus == 1 && players[ordinal] != NULL && turn->remaining_moves > 0)
         {
@@ -794,7 +794,7 @@ static void turnBack(Giocatore *player, Turno *turn) {
   }
 
   movePlayerPosition(player, player->posizione->zona_precedente, turn);
-  int diceRoll = rand() % 2;
+  int diceRoll = rand() % 3;
   if (diceRoll == 0) {
     printf("\nAppare un abitante delle segrete\n");
     Avversario *opponent = generateOpponent(player->posizione);
@@ -866,7 +866,7 @@ static void useSpecialPower(Giocatore *player, Avversario *opponent) {
 
 static void printOpponent(Avversario *opponent) {
   printf(
-    ">>> Il tuo avversario <<<\n"
+    ">>> Il tuo avversario:\n"
     ">>> tipo: %s\n"
     ">>> dadi attacco: %d\n"
     ">>> dadi difesa: %d\n"
@@ -948,7 +948,7 @@ static void playerAttacksOpponent(Giocatore *player, Avversario *opponent) {
     printf("L'avversario perde %d punti vita\n", opponentDemage);
   }
 
-  if (opponent->p_vita > 0) {
+  if (opponent->p_vita > 0 && player->p_vita > 0) {
     //after defending himself, the opponent attacks
     opponentAttacksPlayer(opponent, player, 0);
   }
@@ -971,7 +971,7 @@ static void opponentAttacksPlayer(Avversario *opponent, Giocatore *player, int d
 
   if (opponentHits == 0) {
     printf("Il mostro non ti infligge danni.\n");
-    playerAttacksOpponent(player, opponent);
+    return playerAttacksOpponent(player, opponent);
   }
 
   int playerDefenses = 0;
@@ -999,7 +999,7 @@ static void opponentAttacksPlayer(Avversario *opponent, Giocatore *player, int d
     printf("Perdi %d punti vita\n", playerDemage);
   }
 
-  if (player->p_vita > 0) {
+  if (player->p_vita > 0 && opponent->p_vita > 0) {
     //after defending himself, the player attacks
     playerAttacksOpponent(player, opponent);
   }
@@ -1035,6 +1035,9 @@ static void movePlayerPosition(Giocatore *player, Zona_segrete *to, Turno *turn)
   to->contiene_tesoro = 1;
   turn->remaining_moves--;
   turn->can_advance = 0;
+
+  printf("\nLa tua nuova posizione:\n");
+  printZone(player->posizione, 0);
 }
 
 static void freeOpponent(Avversario *opponent) {
